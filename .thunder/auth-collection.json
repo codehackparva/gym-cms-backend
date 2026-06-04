@@ -1,0 +1,44 @@
+{
+  "info": {
+    "name": "Gym CMS - Auth",
+    "schema": "https://www.thunderclient.com/rest-api/collection/v1"
+  },
+  "variables": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    }
+  ],
+  "requests": [
+    {
+      "name": "Register - Create user",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/auth/register",
+        "headers": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"full_name\": \"Test User\",\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\",\n  \"role\": \"member\"\n}"
+        }
+      },
+      "tests": "pm.test('Status is 201', function(){ pm.response.to.have.status(201); }); pm.test('Has success message', function(){ const json = pm.response.json(); pm.expect(json.message).to.eql('User created successfully'); });"
+    },
+    {
+      "name": "Login - Sign in",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/api/auth/login",
+        "headers": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"test@example.com\",\n  \"password\": \"Password123!\"\n}"
+        }
+      },
+      "tests": "pm.test('Status is 200', function(){ pm.response.to.have.status(200); }); pm.test('Response contains token', function(){ const json = pm.response.json(); pm.expect(json).to.have.property('token'); });"
+    }
+  ]
+}
