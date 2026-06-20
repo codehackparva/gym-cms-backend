@@ -6,6 +6,7 @@ const authRoutes = require('./routes/auth')
 const adminRoutes = require('./routes/admin')
 const trainerRoutes = require('./routes/trainer')
 const memberRoutes = require('./routes/member')
+const checkinRoutes = require('./routes/checkin')
 
 const app = express()
 
@@ -16,6 +17,7 @@ app.use('/api/auth', authRoutes)
 app.use('/api/admin', adminRoutes)
 app.use('/api/trainer', trainerRoutes)
 app.use('/api/member', memberRoutes)
+app.use('/api/checkin', checkinRoutes)
 
 app.get('/', (req, res) => {
   res.json({ message: 'Gym CMS API is running' })
