@@ -86,4 +86,41 @@ router.get('/assignments/:member_id', protect, restrictTo('admin', 'trainer'), a
   res.json(data)
 })
 
+// Get a specific member's progress logs and assigned plans
+router.get('/members/:id/progress', protect, restrictTo('admin', 'trainer'), async (req, res) => {
+  const { id } = req.params
+
+  try {
+    // Fetch member profile info
+    const { data: member, error: memberError } = await supabase
+      .from('members')
+      .select(`*, profiles (full_name, phone)`)
+      .eq('id', id)
+      .single()
+
+    if (memberError) return res.status(500).json({ message: memberError.message })
+
+    // Fetch progress logs
+    const { data: logs, error: logsError } = await supabase
+      .from('progress_logs')
+      .select('*')
+      .eq('member_id', id)
+      .order('logged_at', { ascending: false })
+
+    if (logsError) return res.status(500).json({ message: logsError.message })
+
+    // Fetch assigned plans
+    const { data: assignments, error: assignError } = await supabase
+      .from('assigments')
+      .select(`*, plans (title, type, description, file_url)`)
+      .eq('member_id', id)
+
+    if (assignError) return res.status(500).json({ message: assignError.message })
+
+    res.json({ member, logs, assignments })
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch member progress' })
+  }
+})
+
 module.exports = router

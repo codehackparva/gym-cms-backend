@@ -83,5 +83,66 @@ router.get('/members/:id', protect, restrictTo('admin'), async (req, res) => {
   if (error) return res.status(500).json({ message: error.message })
   res.json(data)
 })
+// Get dashboard statistics
+router.get('/stats', protect, restrictTo('admin'), async (req, res) => {
+  try {
+    // Get check-ins for the last 14 days
+    const fourteenDaysAgo = new Date()
+    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14)
+
+    const { data: checkinData, error: checkinError } = await supabase
+      .from('check_ins')
+      .select('checked_in_at')
+      .gte('checked_in_at', fourteenDaysAgo.toISOString())
+      .order('checked_in_at', { ascending: true })
+
+    if (checkinError) return res.status(500).json({ message: checkinError.message })
+
+    // Group check-ins by date
+    const dailyCounts = {}
+    for (let i = 0; i < 14; i++) {
+      const d = new Date()
+      d.setDate(d.getDate() - (13 - i))
+      const key = d.toISOString().split('T')[0]
+      dailyCounts[key] = 0
+    }
+    checkinData.forEach(c => {
+      const key = c.checked_in_at.split('T')[0]
+      if (dailyCounts[key] !== undefined) dailyCounts[key]++
+    })
+
+    const attendanceTrend = Object.entries(dailyCounts).map(([date, count]) => ({
+      date,
+      count
+    }))
+
+    // Get all members for status breakdown
+    const { data: members, error: memberError } = await supabase
+      .from('members')
+      .select('membership_expirey')
+
+    if (memberError) return res.status(500).json({ message: memberError.message })
+
+    const now = new Date()
+    let active = 0, expiringSoon = 0, expired = 0
+    members.forEach(m => {
+      if (!m.membership_expirey) { expired++; return }
+      const expiry = new Date(m.membership_expirey)
+      if (expiry < now) { expired++ }
+      else {
+        const diffDays = (expiry - now) / (1000 * 60 * 60 * 24)
+        if (diffDays <= 30) { expiringSoon++ }
+        else { active++ }
+      }
+    })
+
+    res.json({
+      attendanceTrend,
+      membershipBreakdown: { active, expiringSoon, expired, total: members.length }
+    })
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch stats' })
+  }
+})
 
 module.exports = router
