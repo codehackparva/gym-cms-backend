@@ -1,68 +1,99 @@
+const express = require('express')
+const router = express.Router()
 const { createClient } = require('@supabase/supabase-js')
+const { body, validationResult } = require('express-validator')
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_KEY
 )
 
-const protect = async (req, res, next) => {
-  const authHeader = req.headers.authorization
+// Validation middleware
+const validateLogin = [
+  body('email')
+    .isEmail().withMessage('Invalid email format')
+    .normalizeEmail()
+    .trim(),
+  body('password')
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+    .trim()
+]
 
-  console.log('Auth header:', authHeader)
+const validateRegister = [
+  body('full_name')
+    .trim()
+    .isLength({ min: 2, max: 50 }).withMessage('Name must be 2-50 characters')
+    .matches(/^[a-zA-Z\s]+$/).withMessage('Name can only contain letters and spaces'),
+  body('email')
+    .isEmail().withMessage('Invalid email format')
+    .normalizeEmail()
+    .trim(),
+  body('password')
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters')
+    .trim(),
+  body('role')
+    .optional()
+    .isIn(['admin', 'trainer', 'member']).withMessage('Invalid role')
+]
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ message: 'No token, not authorized' })
+// Register
+router.post('/register', validateRegister, async (req, res) => {
+  const errors = validationResult(req)
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ message: errors.array()[0].msg })
   }
 
-  const token = authHeader.split(' ')[1]
+  const { full_name, email, password, role } = req.body
 
-  console.log('Token received:', token ? 'YES' : 'NO')
+  const { data, error } = await supabase.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: { full_name, role }
+  })
 
-  try {
-    const { data, error } = await supabase.auth.getUser(token)
+  if (error) return res.status(400).json({ message: error.message })
 
-    console.log('Supabase user data:', data)
-    console.log('Supabase error:', error)
+  await supabase.from('profiles').insert({
+    id: data.user.id,
+    full_name,
+    role: role || 'member'
+  })
 
-    if (error || !data.user) {
-      return res.status(401).json({ message: 'Invalid token', error: error?.message })
-    }
+  res.status(201).json({ message: 'User created successfully' })
+})
 
-    req.user = data.user
-    next()
-  } catch (err) {
-    console.log('Catch error:', err)
-    return res.status(401).json({ message: 'Token verification failed' })
+// Login
+router.post('/login', validateLogin, async (req, res) => {
+  const errors = validationResult(req)
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ message: errors.array()[0].msg })
   }
-}
 
-const restrictTo = (...roles) => {
-  return async (req, res, next) => {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', req.user.id)
-        .single()
+  const { email, password } = req.body
 
-      console.log('Profile data:', data)
-      console.log('Profile error:', error)
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  })
 
-      if (error || !data) {
-        return res.status(403).json({ message: 'Access denied' })
-      }
+  if (error) return res.status(400).json({ message: 'Invalid email or password' })
 
-      if (!roles.includes(data.role)) {
-        return res.status(403).json({ message: 'You do not have permission' })
-      }
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('role, full_name')
+    .eq('id', data.user.id)
+    .single()
 
-      req.role = data.role
-      next()
-    } catch (err) {
-      console.log('restrictTo error:', err)
-      return res.status(403).json({ message: 'Role check failed' })
-    }
+  if (profileError) {
+    return res.status(500).json({ message: 'Profile fetch failed' })
   }
-}
 
-module.exports = { protect, restrictTo }
+  res.json({
+    token: data.session.access_token,
+    role: profile.role,
+    full_name: profile.full_name
+  })
+})
+
+module.exports = router
