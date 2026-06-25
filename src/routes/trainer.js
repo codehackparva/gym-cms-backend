@@ -8,6 +8,16 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 )
 
+const { body, param, validationResult } = require('express-validator')
+
+const handleValidation = (req, res, next) => {
+  const errors = validationResult(req)
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ message: errors.array()[0].msg })
+  }
+  next()
+}
+
 // Get all members
 router.get('/members', protect, restrictTo('admin', 'trainer'), async (req, res) => {
   const { data, error } = await supabase
@@ -22,23 +32,36 @@ router.get('/members', protect, restrictTo('admin', 'trainer'), async (req, res)
 })
 
 // Create a plan
-router.post('/plans', protect, restrictTo('admin', 'trainer'), async (req, res) => {
-  const { title, type, description, file_url } = req.body
-
-  const { data, error } = await supabase
-    .from('plans')
-    .insert({
-      title,
-      type,
-      description,
-      file_url,
-      created_by: req.user.id
-    })
-    .select()
-
-  if (error) return res.status(500).json({ message: error.message })
-  res.status(201).json({ message: 'Plan created successfully', data })
-})
+router.post('/plans',
+  protect,
+  restrictTo('admin', 'trainer'),
+  [
+    body('title')
+      .trim()
+      .isLength({ min: 2, max: 100 }).withMessage('Title must be 2-100 characters'),
+    body('type')
+      .isIn(['workout', 'nutrition']).withMessage('Type must be workout or nutrition'),
+    body('description')
+      .optional()
+      .trim()
+      .isLength({ max: 1000 }).withMessage('Description too long'),
+    body('file_url')
+      .optional()
+      .trim()
+      .isURL().withMessage('Invalid file URL')
+      .optional({ nullable: true, checkFalsy: true })
+  ],
+  handleValidation,
+  async (req, res) => {
+    const { title, type, description, file_url } = req.body
+    const { data, error } = await supabase
+      .from('plans')
+      .insert({ title, type, description, file_url, created_by: req.user.id })
+      .select()
+    if (error) return res.status(500).json({ message: 'Failed to create plan' })
+    res.status(201).json({ message: 'Plan created successfully', data })
+  }
+)
 
 // Get all plans
 router.get('/plans', protect, restrictTo('admin', 'trainer'), async (req, res) => {
@@ -54,21 +77,24 @@ router.get('/plans', protect, restrictTo('admin', 'trainer'), async (req, res) =
 })
 
 // Assign plan to member
-router.post('/assign', protect, restrictTo('admin', 'trainer'), async (req, res) => {
-  const { member_id, plan_id } = req.body
-
-  const { data, error } = await supabase
-    .from('assigments')
-    .insert({
-      member_id,
-      plan_id,
-      assigned_by: req.user.id
-    })
-    .select()
-
-  if (error) return res.status(500).json({ message: error.message })
-  res.status(201).json({ message: 'Plan assigned successfully', data })
-})
+router.post('/assign',
+  protect,
+  restrictTo('admin', 'trainer'),
+  [
+    body('member_id').isUUID().withMessage('Invalid member ID'),
+    body('plan_id').isUUID().withMessage('Invalid plan ID')
+  ],
+  handleValidation,
+  async (req, res) => {
+    const { member_id, plan_id } = req.body
+    const { data, error } = await supabase
+      .from('assigments')
+      .insert({ member_id, plan_id, assigned_by: req.user.id })
+      .select()
+    if (error) return res.status(500).json({ message: 'Failed to assign plan' })
+    res.status(201).json({ message: 'Plan assigned successfully', data })
+  }
+)
 
 // Get assignments for a member
 router.get('/assignments/:member_id', protect, restrictTo('admin', 'trainer'), async (req, res) => {
